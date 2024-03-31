@@ -39,7 +39,9 @@ search google
     how to build vue js project
     how to install node js
 
-#sudo apt install -y nodejs
+#apt update
+#apt install -y nodejs
+#apt install -y npm
 node -v
 npm -v
 
@@ -49,7 +51,9 @@ forcus on file:
     todolist/vue.config.js
 
 npm install (nếu install lỗi rm -rf node_modules package-lock.json and npm cache clean -f)
+curl -s https://deb.nodesource.com/setup_18.x | sudo bash (reinstall node 18)
 npm run build (sau khi build sẽ tạo ra dist folder)
+
 npm run serve
 ```
 #### Run todolist with nginx
@@ -60,10 +64,10 @@ nginx -s reload
 vim /etc/nginx/conf.d/todolist.conf
     server {
     listen 8081;
-    root /home/kali/Desktop/Devops/todolist/dist/;
+    root /home/tam/projects/todolist/dist/;
     index index.html;
     try_files $uri $uri/ /index.html;
-    }
+}
 nginx -t
 nginx -s reload
 sudo usermod -aG todolist www-data (www-data is user of nginx cat /etc/nginx/nginx.conf)
@@ -95,7 +99,8 @@ systemctl status vision
 ```
 #install java
 sudo apt update
-sudo apt install default-jdk
+sudo apt install default-jdk (for debian)
+apt install openjdk-17-jdk openjdk-17-jre (for ubuntu)
 #If you want to install a specific version of the JDK (sudo apt-cache search openjdk)
 java --version
 
@@ -110,6 +115,7 @@ sudo systemctl enable --now mariadb
 systemctl status mariadb  
 systemctl stop mariadb
 vim /etc/mysql/mariadb.conf.d/50-server.cnf (thay đổi đia chỉ thành 0.0.0.0)
+systemctl start mariadb
 sudo mysql -u root -p (password: root)
     show databases;
     create database shoeshop;
@@ -117,13 +123,15 @@ sudo mysql -u root -p (password: root)
     grant all privileges on shoeshop.* to 'shoeshop'@'%';
     flush privileges;
     exit;
-sudo mysql -h 192.168.1.9 -P 3306 -u shoeshop -p
+sudo mysql -h 192.168.1.110 -P 3306 -u shoeshop -p          
     show databases;
     use shoeshop;
-    source shoeshop/shoe_shopdb.sql
-    show tables;
-#modify application.properties để kết nối tới database
-cd /home/kali/Desktop/Devops/shoeshop
+    source /home/tam/projects/shoeshop/shoe_shopdb.sql          
+    show tables;            
+    exit;           
+su shoeshop             
+vim /home/tam/projects/shoeshop/src/main/resources/application.properties (modify application.properties để kết nối tới database)
+cd /home/tam/projects/shoeshop
 mvn install -DskipTest=true
 nohup java -jar target/shoe-ShoppingCart-0.0.1-SNAPSHOT.jar 2>&1 &
 ```
@@ -132,17 +140,19 @@ nohup java -jar target/shoe-ShoppingCart-0.0.1-SNAPSHOT.jar 2>&1 &
 ```
 Google search:
     gitlab ee packages
+# curl -s https://packages.gitlab.com/install/repositories/gitlab/gitlab-ee/script.deb.sh | sudo bash
+# sudo apt-get install gitlab-ee=14.4.1-ee.0
 #Sau khi cài đặt xong cần 1 cái domain nếu không có sử dụng add host
 vim /etc/hosts
-    192.168.1.9     git.gitlabserver.tech
+    192.168.1.100     gitlab.tamabcxyz.tech
 vim /etc/gitlab/gitlab.rb
-    external_url 'http://git.gitlabserver.tech'
+    external_url 'http://gitlab.tamabcxyz.tech'
 sudo gitlab-ctl reconfigure
 Google search:
     host path window
 #backup file hosts in c:\Windows\System32\Drivers\etc\hosts
-#tạo file hosts mới và thêm vào ip và domain của server (192.168.1.9 git.gitlabserver.tech)
-#hiện tại windown có thể try cập vào gitlab server bằng url: git.gitlabserver.tech với user: 'root' và password đươc lưu ở /etc/gitlab/initial_root_password
+#tạo file hosts mới và thêm vào ip và domain của server (192.168.1.9 gitlab.tamabcxyz.tech)
+#hiện tại windown có thể try cập vào gitlab server bằng url: gitlab.tamabcxyz.tech với user: 'root' và password đươc lưu ở /etc/gitlab/initial_root_password
 ```
 
 ### CI/CD (continuous integration and continueous deployment)
@@ -155,6 +165,7 @@ curl -L "https://packages.gitlab.com/install/repositories/runner/gitlab-runner/s
 sudo apt-get install gitlab-runner
 sudo apt-cache madison gitlab-runner
 gitlab-runner -version
+sudo -i             
 gitlab-runner register (nhập thông tin, thông tin sẽ được lưu ở file /etc/gitlab-runner/config.toml)
 nohub gitlab-runner run --working-directory /home/gitlab-runner/ --config /etc/gitlab-runner/config.toml --service gitlab-runner --user gitlab-runner 2>&1 &
 ```
@@ -163,44 +174,51 @@ nohub gitlab-runner run --working-directory /home/gitlab-runner/ --config /etc/g
 variables:
     projectname: shoeshop
     version: 0.0.1
-    projectpath: /data/shoeshop/
-state:
+    projectuser: shoeshop
+    projectpath: /datas/$projectuser/
+
+stages:
     - build
     - deploy
     - checklog
+
 build:
-    state: build
+    stage: build
     variables:
-        GIT_STRATEGY: clone #chỉ đinh bước build đã clone rồi deploy không cần xóa và clone lại
+        GIT_STRATEGY: clone #clone in build state, deploy will be skip
     script:
         - mvn install -DskipTests=true
-    tags: #sử dụng runner gitlab-server
-        - gitlab-server
+    tags:
+        - gitlab-server-tags #tag of runner
     only:
-        - tags # chỉ khi có tag thì pipeline mới chạy
+        - tags #when create tag for project ci/ci will run
+
 deploy:
-    state: deploy
+    stage: deploy
     variables:
-        GIT_STRATEGY: none #chỉ đinh bước build đã clone rồi deploy không cần xóa và clone lại
+        GIT_STRATEGY: none #clone in build state, deploy will be skip
     script: 
         - sudo cp target/shoe-ShoppingCart-0.0.1-SNAPSHOT.jar $projectpath
-        - sudo chown -R shoeshop. $projectpath
-        - sudo su shoeshop -c "kill -9 $(ps -ef | grep shoe-ShoppingCart-0.0.1-SNAPSHOT.jar | grep -v grep | awk '{print $2}')"
-        - sudo su shoeshop -c "cd /data/shoeshop; nohup java -jar shoe-ShoppingCart-0.0.1-SNAPSHOT.jar > nohup.out 2>&1 &"
+        - sudo chown -R $projectuser. $projectpath
+        - sudo su $projectuser -c "kill -9 $(ps -ef | grep shoe-ShoppingCart-0.0.1-SNAPSHOT.jar | grep -v grep | awk '{print $2}') | true"
+        - sudo su $projectuser -c "cd $projectpath; nohup java -jar shoe-ShoppingCart-0.0.1-SNAPSHOT.jar > nohup.out 2>&1 &"
     tags:
-        - gitlab-server
+        - gitlab-server-tags
     only:
-        - tags # chỉ khi có tag thì pipeline mới chạy
+        - tags
+    when: manual #need run manual
+
 checklog:
-    state: checklog
+    stage: checklog
     variables:
         GIT_STRATEGY: none
     script: 
-        - sudo su shoeshop -c "cd /data/shoeshop; tail -n 10000 nohup.out"
+        - sudo su $projectuser -c "cd $projectpath && tail -n 10000 nohup.out"
     tags:
-        - gitlab-server
+        - gitlab-server-tags
     only:
-        - tags # chỉ khi có tag thì pipeline mới chạy
+        - tags
+    when: manual
 
 ```
 ```
